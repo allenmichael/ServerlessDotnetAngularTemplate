@@ -1,0 +1,161 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>netcoreapp2.1</TargetFramework>
+    <TypeScriptCompileBlocked>true</TypeScriptCompileBlocked>
+    <TypeScriptToolsVersion>Latest</TypeScriptToolsVersion>
+    <IsPackable>false</IsPackable>
+    <DeployToS3>true</DeployToS3>
+    <StackName>serverless-angular-api</StackName>
+    <DefaultAWSRegion>us-west-2</DefaultAWSRegion>
+    <S3BucketName>ng-amsxbg</S3BucketName>
+    <IndexPage>index.html</IndexPage>
+    <SkipsS3ObjectDelete>false</SkipsS3ObjectDelete>
+    <SpaRoot>ClientApp\</SpaRoot>
+    <DefaultItemExcludes>$(DefaultItemExcludes);$(SpaRoot)node_modules\**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.AspNetCore.SpaServices.Extensions" Version="2.1.0" />
+    <PackageReference Include="Amazon.Lambda.AspNetCoreServer" Version="2.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="RoslynCodeTaskFactory" Version="2.0.7" />
+    <DotNetCliToolReference Include="Amazon.Lambda.Tools" Version="2.1.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Don't publish the SPA source files, but do show them in the project files list -->
+    <Content Remove="$(SpaRoot)**" />
+    <None Include="$(SpaRoot)**" Exclude="$(SpaRoot)node_modules\**" />
+  </ItemGroup>
+
+  <Target Name="DeployNgToAWS">
+    <CallTarget Targets="EnsureAWSCLI;"/>  
+  </Target>
+
+  <Target Name="EnsureAWSCLI" Condition="$(DeployToS3)">
+    <Exec Command="aws --version" ContinueOnError="true">
+      <Output TaskParameter="ExitCode" PropertyName="ErrorCode" />
+    </Exec>
+    <Error Condition="'$(ErrorCode)' != '0'" Text="You must install the AWS CLI. To install, follow the instructions here: https://aws.amazon.com/cli/" />
+  </Target>
+
+  <Target Name="GetCFStackDetails" AfterTargets="EnsureAWSCLI" Condition="$(DeployToS3)">
+    <Exec Command="aws cloudformation describe-stacks --stack-name $(StackName) --query 'Stacks[0].Outputs[?OutputKey == `ApiURL`].OutputValue' --output text" ContinueOnError="true" ConsoleToMsBuild="true">
+      <Output TaskParameter="ExitCode" PropertyName="ErrorCode" />
+      <Output TaskParameter="ConsoleOutput" PropertyName="ApiURL" />
+    </Exec>
+    <Error Condition="'$(ErrorCode)' != '0'" Text="You must install the AWS CLI. To install, follow the instructions here: https://aws.amazon.com/cli/" />
+    <OverwriteEnvironmentAPIUrl ReplacementText="$(ApiURL)" />
+    <CallTarget Targets="PublishRunWebpack;"/>
+  </Target>
+  
+  <Target Name="CreateIfNotExistsS3Bucket" AfterTargets="GetCFStackDetails" Condition="$(DeployToS3)">
+    <Exec Command="aws s3 mb s3://$(S3BucketName) --region $(DefaultAWSRegion)" ContinueOnError="true" ConsoleToMsBuild="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="ErrorMessage" />
+    </Exec>
+    <Error Condition="!$(ErrorMessage.Contains('BucketAlreadyOwnedByYou'))" Text="Something went wrong when creating the S3 Bucket: $(ErrorMessage)" />
+    <CreateProperty Value="true">  
+      <Output TaskParameter="Value" PropertyName="S3BucketCreated" />  
+    </CreateProperty>  
+  </Target>
+
+  <Target Name="EnableS3Hosting" AfterTargets="CreateIfNotExistsS3Bucket" Condition="$(DeployToS3) And $(S3BucketCreated)">
+    <Message Importance="high" Text="Adding website hosting to S3 bucket" />
+    <Exec Command="aws s3 website s3://$(S3BucketName) --index $(IndexPage) --error $(IndexPage)" ContinueOnError="true" ConsoleToMsBuild="true">
+      <Output TaskParameter="ExitCode" PropertyName="ErrorCode" />
+    </Exec>
+    <Error Condition="'$(ErrorCode)' != '0'" Text="Couldn't add static hosting to this S3 bucket." />
+  </Target>
+
+  <Target Name="RemoveExistingFilesFromS3" AfterTargets="EnableS3Hosting" Condition="$(DeployToS3) And $(S3BucketCreated) And !$(SkipsS3ObjectDelete)">
+    <Message Importance="high" Text="Remove existing objects from S3" />
+    <Exec Command="aws s3 rm s3://$(S3BucketName) --recursive" ContinueOnError="true" ConsoleToMsBuild="true">
+      <Output TaskParameter="ExitCode" PropertyName="ErrorCode" />
+    </Exec>
+    <Error Condition="'$(ErrorCode)' != '0'" Text="Couldn't add static hosting to this S3 bucket." />
+  </Target>
+
+  <Target Name="CopyFilesToS3" AfterTargets="RemoveExistingFilesFromS3" Condition="$(DeployToS3) And $(S3BucketCreated)">
+    <Message Importance="high" Text="Copying project to S3 bucket" />
+    <Exec Command="aws s3 cp $(SpaRoot)\dist s3://$(S3BucketName) --acl public-read --recursive" ContinueOnError="true" ConsoleToMsBuild="true">
+      <Output TaskParameter="ExitCode" PropertyName="ErrorCode" />
+    </Exec>
+    <Error Condition="'$(ErrorCode)' != '0'" Text="Couldn't copy your project to this S3 bucket." />
+  </Target>
+
+  <Target Name="ListS3WebsiteUrl" AfterTargets="CopyFilesToS3" Condition="$(DeployToS3) And $(S3BucketCreated)">
+    <Message Importance="high" Text="Locating your project's URL..." />
+    <Exec Command="aws s3api get-bucket-location --bucket $(S3BucketName) --query LocationConstraint" ContinueOnError="true" ConsoleToMsBuild="true">
+      <Output TaskParameter="ExitCode" PropertyName="ErrorCode" />
+      <Output TaskParameter="ConsoleOutput" PropertyName="Location" />
+    </Exec>    
+    <Error Condition="$(ErrorCode) != '0'" Text="Couldn't find your project URL." />
+    <Message Importance="high" Condition="$(Location) == 'null'" Text="View your project here: http://$(S3BucketName).s3-website.us-east-1.amazonaws.com" />
+    <Message Importance="high" Condition="$(Location) != 'null'" Text="View your project here: http://$(S3BucketName).s3-website.$(Location).amazonaws.com" />
+  </Target>
+
+  <Target Name="DebugEnsureNodeEnv" BeforeTargets="Build" Condition=" '$(Configuration)' == 'Debug' And !Exists('$(SpaRoot)node_modules') ">
+    <!-- Ensure Node.js is installed -->
+    <Exec Command="node --version" ContinueOnError="true">
+      <Output TaskParameter="ExitCode" PropertyName="ErrorCode" />
+    </Exec>
+    <Error Condition="'$(ErrorCode)' != '0'" Text="Node.js is required to build and run this project. To continue, please install Node.js from https://nodejs.org/, and then restart your command prompt or IDE." />
+    <Message Importance="high" Text="Restoring dependencies using 'npm'. This may take several minutes..." />
+    <Exec WorkingDirectory="$(SpaRoot)" Command="npm install" />
+  </Target>
+
+  <Target Name="PublishRunWebpack">
+    <!-- As part of publishing, ensure the JS resources are freshly built in production mode -->
+    <Exec WorkingDirectory="$(SpaRoot)" Command="npm install" />
+    <Exec WorkingDirectory="$(SpaRoot)" Command="npm run build -- --prod" />
+
+    <!-- Include the newly-built files in the publish output -->
+    <!-- <ItemGroup>
+      <DistFiles Include="$(SpaRoot)dist\**; $(SpaRoot)dist-server\**" />
+      <DistFiles Include="$(SpaRoot)node_modules\**" Condition="'$(BuildServerSideRenderer)' == 'true'" />
+      <ResolvedFileToPublish Include="@(DistFiles->'%(FullPath)')" Exclude="@(ResolvedFileToPublish)">
+        <RelativePath>%(DistFiles.Identity)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup> -->
+  </Target>
+
+  <UsingTask TaskName="OverwriteEnvironmentAPIUrl" TaskFactory="CodeTaskFactory"  
+    AssemblyFile="$(RoslynCodeTaskFactory)"
+    Condition=" '$(RoslynCodeTaskFactory)' != '' ">
+  <ParameterGroup>
+    <ReplacementText ParameterType="System.String" Required="true" />
+  </ParameterGroup>
+  <Task>
+    <Reference Include="System.Core" />
+    <Using Namespace="System" />
+    <Using Namespace="System.IO" />
+    <Using Namespace="System.Text.RegularExpressions" />
+    <Code Type="Fragment" Language="cs">
+      <![CDATA[
+          var file = $"$(SpaRoot)src{Path.DirectorySeparatorChar}environments{Path.DirectorySeparatorChar}environment.prod.ts";
+          var result = Regex.Replace(File.ReadAllText(file), "apiUrl: ''", $"apiUrl: '{ReplacementText}'");
+          System.Console.WriteLine("Evaluating your environment.prod.ts file found here:");
+          System.Console.WriteLine($"$(SpaRoot)src{Path.DirectorySeparatorChar}environments{Path.DirectorySeparatorChar}environment.prod.ts");
+          System.Console.WriteLine($"Your environment.prod.ts file is only altered if the apiUrl is empty. {Environment.NewLine}This build step will not overwrite an existing value for apiUrl.");
+          System.Console.WriteLine(result);
+          File.WriteAllText(file, result);
+          ]]>
+    </Code>
+  </Task>
+</UsingTask>
+<!-- File.WriteAllText(
+                OutputFilename,
+                Regex.Replace(File.ReadAllText(InputFilename), MatchExpression, ReplacementText)
+                ); -->
+<!-- <Target Name="EditEnvironmentFile" AfterTargets="GetCFStackDetails">
+  
+  <Message Importance="high" Text="Hello!" />
+  <Message Importance="high" Text="URL: $(ApiGatewayURL)" />
+</Target> -->
+
+</Project>

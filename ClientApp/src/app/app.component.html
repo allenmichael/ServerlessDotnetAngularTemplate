@@ -1,0 +1,12 @@
+<mat-toolbar color="primary">
+  <mat-toolbar-row>
+    <span>{{title}}</span>
+    <button mat-icon-button [matMenuTriggerFor]="menu" aria-label="Toggle menu">
+      <mat-icon>more_vert</mat-icon>
+    </button>
+  </mat-toolbar-row>
+</mat-toolbar>
+<mat-menu #menu="matMenu" xPosition="before">
+  <span mat-menu-item routerLink="/landing">Home</span>
+</mat-menu>
+<router-outlet></router-outlet>
