@@ -20,7 +20,7 @@
         "Role": null,
         "Policies": [ "AWSLambdaFullAccess" ],
         "Events": {
-          "PutResource": {
+          "APIResource": {
             "Type": "Api",
             "Properties": {
               "Path": "/{proxy+}",
