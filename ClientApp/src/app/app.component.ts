@@ -7,7 +7,7 @@ import { includes } from 'lodash';
   styleUrls: ['./app.component.css']
 })
 export class AppComponent implements OnInit {
-  title = 'app';
+  title = 'Weather Forecasts';
   showSignIn = false;
 
   constructor(

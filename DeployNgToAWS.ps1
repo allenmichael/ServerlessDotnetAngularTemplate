@@ -13,10 +13,14 @@ try {
     $xml = [xml](Get-Content ServerlessAngularTemplate.csproj)
     $properties = $xml.Project.PropertyGroup
     Write-Output $properties
-    Import-Module AWSPowerShell.NetCore
+    If($IsMacOS) {
+        Import-Module AWSPowerShell.NetCore
+    } Else {
+        Import-Module AWSPowerShell
+    }
     Get-AWSPowerShellVersion
     $apiURL = Get-CFNStack -Region $properties.DefaultAWSRegion -StackName $properties.StackName | Select-Object -ExpandProperty "Outputs" | Select-Object OutputKey, OutputValue | Where-Object {$_.OutputKey -Match "ApiURL"} | Select-Object -ExpandProperty OutputValue  
-    $ngEnvFilePath = Join-Path -Path $properties.SpaRoot -ChildPath "src" -AdditionalChildPath "environments", "environment.prod.ts"
+    $ngEnvFilePath = Join-Path -Path ClientApp -ChildPath $(Join-Path -Path "src" -ChildPath $(Join-Path -Path "environments" -ChildPath "environment.prod.ts"))
     Write-Output $apiURL
     Write-Output "Evaluating your environment.prod.ts file found here:"
     Write-Output $ngEnvFilePath
@@ -28,8 +32,8 @@ try {
     Out-File -FilePath $ngEnvFilePath -InputObject $replacementNgEnvFile
     Write-Output "Checking if Node.js is installed on this machine..."
     Start-Process node -ArgumentList @('--version') -Wait
-    Start-Process -WorkingDirectory $properties.SpaRoot npm -ArgumentList @('install') -Wait
-    Start-Process -WorkingDirectory $properties.SpaRoot npm -ArgumentList @('run build -- --prod') -Wait
+    Start-Process -WorkingDirectory $properties.SpaRoot npm -ArgumentList @('install') -Wait -NoNewWindow
+    Start-Process -WorkingDirectory $properties.SpaRoot npm -ArgumentList @('run build -- --prod') -Wait -NoNewWindow
     $bucketError = ""
     try {
         New-S3Bucket -BucketName $properties.S3BucketName -PublicReadOnly -Region $properties.DefaultAWSRegion  
@@ -44,11 +48,11 @@ try {
     else {
         Write-S3BucketWebsite -BucketName $properties.S3BucketName -WebsiteConfiguration_IndexDocumentSuffix index.html -WebsiteConfiguration_ErrorDocument index.html         
         Write-Output "Removing previous files from this S3 Bucket..."
-        Get-S3Object -BucketName ng-amsxbg | Remove-S3Object -Force
+        Get-S3Object -BucketName $properties.S3BucketName | Remove-S3Object -Force
     
         foreach ($f in (Get-ChildItem ClientApp/dist)) {
             Write-Output "Uploading $f to S3 Bucket..."
-            Write-S3Object -BucketName $properties.S3BucketName  -File (Join-Path $properties.SpaRoot -ChildPath "dist" -AdditionalChildPath $f) -PublicReadOnly
+            Write-S3Object -BucketName $properties.S3BucketName  -File (Join-Path $properties.SpaRoot -ChildPath $(Join-Path "dist" -ChildPath $f)) -PublicReadOnly
             Write-Output "$f successfully uploaded."
         }
         $locationObj = Get-S3BucketLocation -BucketName $properties.S3BucketName

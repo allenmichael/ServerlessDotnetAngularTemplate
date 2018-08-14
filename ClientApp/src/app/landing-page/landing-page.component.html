@@ -1,3 +1,15 @@
-<p>
-  landing-page works!
-</p>
+<mat-grid-list cols="4" rowHeight="2:1">
+  <mat-grid-tile *ngFor="let wd of this.weatherData">
+    <mat-card>
+      <mat-card-title>{{wd.dateFormatted}} - {{wd.summary}}</mat-card-title>
+      <mat-card-content>
+        <p>
+          {{wd.temperatureC}} &deg;C
+        </p>
+        <p>
+          {{wd.temperatureF}} &deg;F
+        </p>
+      </mat-card-content>
+    </mat-card>
+  </mat-grid-tile>
+</mat-grid-list>

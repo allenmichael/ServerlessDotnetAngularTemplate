@@ -9,18 +9,23 @@ import { pipe } from 'rxjs';
 })
 export class LandingPageComponent implements OnInit {
   apiUrl: string;
+  weatherData = [];
   constructor(
     @Inject('API_URL') apiUrl: string,
     private http: HttpClient
   ) {
-    console.log(apiUrl);
     this.apiUrl = apiUrl;
   }
 
   async ngOnInit() {
     this.http.get(`${this.apiUrl}api/SampleData/WeatherForecasts`)
       .subscribe(
-        pipe(resp => console.log(resp))
+        pipe((resp: any[]) => {
+          console.log(resp);
+          resp.map(v => {
+            this.weatherData.push(v);
+          });
+        })
       );
   }
 
