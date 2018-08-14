@@ -13,6 +13,11 @@ try {
     $xml = [xml](Get-Content ServerlessAngularTemplate.csproj)
     $properties = $xml.Project.PropertyGroup
     Write-Output $properties
+    try {
+        $IsMacOS
+    } catch {
+        $IsMacOS = $false
+    }
     If($IsMacOS) {
         Import-Module AWSPowerShell.NetCore
     } Else {
@@ -29,7 +34,7 @@ try {
     $ngEnvFile = Get-Content $ngEnvFilePath
     $replacementNgEnvFile = $ngEnvFile.Replace("apiUrl: ''", "apiUrl: '$apiURL'")
     Write-Output $replacementNgEnvFile
-    Out-File -FilePath $ngEnvFilePath -InputObject $replacementNgEnvFile
+    [IO.File]::WriteAllLines($ngEnvFilePath, $replacementNgEnvFile)
     Write-Output "Checking if Node.js is installed on this machine..."
     Start-Process node -ArgumentList @('--version') -Wait
     Start-Process -WorkingDirectory $properties.SpaRoot npm -ArgumentList @('install') -Wait -NoNewWindow
